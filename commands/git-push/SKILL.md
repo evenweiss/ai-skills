@@ -1,3 +1,8 @@
+---
+name: git-push
+description: 代码审查 + 提交 + 推送工作流：先 review 未提交代码，通过后生成 commit message 并自动 push
+---
+
 # git-push
 
 > Code review + commit + push workflow
