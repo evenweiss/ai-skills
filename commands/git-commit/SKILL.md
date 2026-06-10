@@ -1,3 +1,8 @@
+---
+name: git-commit
+description: 根据 git diff 生成 Conventional Commits 规范的提交信息并直接执行 git commit
+---
+
 # git-commit
 
 > Generate commit message from git diff and execute git commit

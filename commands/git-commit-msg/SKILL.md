@@ -1,3 +1,8 @@
+---
+name: git-commit-msg
+description: 根据 git diff 生成 Conventional Commits 规范的提交信息，由用户决定是否执行 git commit
+---
+
 # git-commit-msg
 
 > Generate commit message from git diff, and optionally execute git commit
