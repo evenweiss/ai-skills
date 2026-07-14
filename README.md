@@ -1,4 +1,4 @@
-# ai-agent-skills
+# ai-skills
 
 Public source repository for AI agent commands and skills used by `luminae-helper`.
 
