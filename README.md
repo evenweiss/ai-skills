@@ -78,4 +78,4 @@ skills/<id>/SKILL.md    # skill 模式条目（可含 references/ scripts/ 等�
 本仓库在构建时被以下工具打包（npm 包内含快照，最终用户运行时无需访问本仓库）：
 
 - [luminae-helper](https://github.com/evenweiss/luminae-helper) — 公共技能安装 CLI
-- [kfz-skills-helper](https://github.com/evenweiss/kfz-skills-helper) — 含内部技能的包装器（内部技能不存放于本仓库）
+- 内部包装器（私有仓库，可内联附加技能后打包分发）
