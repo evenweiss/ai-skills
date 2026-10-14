@@ -1,6 +1,6 @@
 ---
 name: git-flow
-description: Create, check out, or finish Git Flow feature, release, and hotfix branches; not for generic Git operations or read-only Git questions.
+description: 用户要求创建、检出或 finish Git Flow 的 feature、release、hotfix 分支时使用；不适用于普通 Git 操作或只读 Git 问答。
 ---
 
 # Git Flow
