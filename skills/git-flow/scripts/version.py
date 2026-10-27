@@ -34,6 +34,9 @@ def calculate(args):
         raise ValueError("production must be main or master")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", args.remote):
         raise ValueError("invalid remote name")
+    finishing = args.mode.startswith("finish-")
+    if finishing and args.bump not in ("patch", "minor", "major"):
+        raise ValueError("finish requires --bump patch|minor|major after compatibility assessment")
 
     repo = Path(args.repo).resolve()
     if Path(git(repo, "rev-parse", "--show-toplevel")).resolve() != repo:
@@ -81,6 +84,15 @@ def calculate(args):
         "production_sha": production_sha,
         "base_tag": tag_name,
     }
+    if finishing:
+        major, minor, patch = tag_number
+        if args.bump == "patch":
+            minimum = (major, minor, patch + 1)
+        elif args.bump == "minor":
+            minimum = (major, minor + 1, 0)
+        else:
+            minimum = (major + 1, 0, 0)
+        result.update(bump=args.bump, minimum_version=render(minimum))
     hotfixes = []
     for ref in live:
         if ref.startswith("refs/heads/hotfix/"):
@@ -100,10 +112,8 @@ def calculate(args):
             result["reason"] = "highest hotfix uses a newer version line than the production tag"
         if f"refs/heads/hotfix/{candidate}" in live:
             raise ValueError("candidate hotfix branch already exists on remote")
-    elif args.mode == "finish-feature":
-        result["candidate"] = render((tag_number[0], tag_number[1] + 1, 0))
-    elif args.mode == "finish-hotfix":
-        result["candidate"] = render((tag_number[0], tag_number[1], tag_number[2] + 1))
+    elif args.mode in ("finish-feature", "finish-hotfix"):
+        result["candidate"] = render(minimum)
     else:
         if not args.branch or not args.branch.startswith("release/"):
             raise ValueError("release mode requires --branch release/X.Y.Z")
@@ -111,6 +121,8 @@ def calculate(args):
         parsed = version(target)
         if parsed is None or parsed <= tag_number:
             raise ValueError("release version must be X.Y.Z and higher than production tag")
+        if finishing and parsed < minimum:
+            raise ValueError(f"release version must be at least {render(minimum)} for --bump {args.bump}")
         result["candidate"] = target
 
     if args.mode == "create-release":
@@ -138,6 +150,7 @@ def main():
     parser.add_argument("--remote", required=True)
     parser.add_argument("--production", required=True)
     parser.add_argument("--branch", help="source branch; required for release modes")
+    parser.add_argument("--bump", choices=("patch", "minor", "major"), help="assessed numeric increment; required for finish modes")
     args = parser.parse_args()
     try:
         print(json.dumps(calculate(args), ensure_ascii=False, separators=(",", ":")))
