@@ -14,6 +14,7 @@
 
 | ID | 能力 |
 | --- | --- |
+| [ai-development-workflow](skills/ai-development-workflow/SKILL.md) | 按任务规模组织 AI 辅助开发协作，维护版本基线、环境受限验证及阶段验收与交接 |
 | [git-flow](skills/git-flow/SKILL.md) | Git Flow feature / release / hotfix 分支的创建、检出与 finish：从生产主干建分支，版本号自动计算，finish 合并主干 + develop 并打 Tag |
 | [identity](skills/identity/SKILL.md) | 检测项目类型（前端/后端/全栈/移动端/数据科学/DevOps 等），自动设定 agent 身份 |
 
