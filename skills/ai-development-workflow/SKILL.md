@@ -1,6 +1,6 @@
 ---
 name: ai-development-workflow
-description: Use when planning or coordinating AI-assisted software delivery across stages, workspaces, or sessions; when verification is split by environment availability; or when handing over a long-running development task. Not for routine coding, isolated code review, or general Codex setup unless workflow coordination is requested.
+description: 用户要求规划或协调跨阶段、跨工作区、跨会话的 AI 辅助开发任务，验证需按环境可用性分开处理，或需交接长周期开发任务时使用；不适用于日常编码、单次代码审查或无协调需求的工具配置。
 ---
 
 # AI Development Workflow
