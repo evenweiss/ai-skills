@@ -17,6 +17,7 @@
 | [ai-development-workflow](skills/ai-development-workflow/SKILL.md) | AI 协作开发流程：协调跨阶段、多工作区和多会话任务，覆盖专业分工、回传监控、验证及交接 |
 | [git-flow](skills/git-flow/SKILL.md) | Git Flow feature / release / hotfix 分支的创建、检出与 finish：从生产主干建分支，版本号自动计算，finish 合并主干 + develop 并打 Tag |
 | [identity](skills/identity/SKILL.md) | 检测项目类型（前端/后端/全栈/移动端/数据科学/DevOps 等），自动设定 agent 身份 |
+| [generate-refactor-docs](skills/generate-refactor-docs/SKILL.md) | 为页面、直连接口及关联后端重构生成本地 Markdown 需求、契约、方案和验收用例 |
 
 每个技能的详细用法见其目录下的 `SKILL.md`。
 

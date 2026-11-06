@@ -1,0 +1,3 @@
+interface:
+  display_name: "生成重构文档"
+  short_description: "为页面、直连接口及关联后端重构生成本地 Markdown 需求、方案与验收用例"
