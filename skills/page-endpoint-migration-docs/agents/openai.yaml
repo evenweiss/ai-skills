@@ -1,0 +1,3 @@
+interface:
+  display_name: "页面与接口迁移文档"
+  short_description: "为页面和直连接口迁移生成 Markdown 需求、方案、契约及验收用例"
