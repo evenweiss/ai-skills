@@ -1,0 +1,7 @@
+name: ai-development-workflow
+version: "0.9.2"
+description: AI 协作开发流程与上下文压缩后的统筹续接提醒。
+author: evenweiss
+provides_hooks:
+  - post_compaction
+  - pre_llm_call

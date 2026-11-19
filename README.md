@@ -1,6 +1,6 @@
 # ai-skills
 
-公共 AI agent 技能仓库（commands + skills），适用于 Claude Code、Codex、Cursor、Hermes Agent、OpenCode、Trae 等支持 SKILL 规范的 AI 编程工具。
+公共 AI agent 技能和插件仓库。普通技能适用于 Claude Code、Codex、Cursor、Hermes Agent、OpenCode、Trae 等支持 SKILL 规范的工具。AI 开发协作插件提供 Codex、Claude Code、Cursor、Pi 和 Hermes Agent 的宿主入口。
 
 ## 技能列表
 
@@ -14,14 +14,34 @@
 
 | ID | 能力 |
 | --- | --- |
-| [ai-development-workflow](skills/ai-development-workflow/SKILL.md) | AI 协作开发流程：协调跨阶段、多工作区和多会话任务，覆盖专业分工、回传监控、验证及交接 |
 | [git-flow](skills/git-flow/SKILL.md) | Git Flow feature / release / hotfix 分支的创建、检出与 finish：从生产主干建分支，版本号自动计算，finish 合并主干 + develop 并打 Tag |
 | [identity](skills/identity/SKILL.md) | 检测项目类型（前端/后端/全栈/移动端/数据科学/DevOps 等），自动设定 agent 身份 |
 | [generate-refactor-docs](skills/generate-refactor-docs/SKILL.md) | 为页面、直连接口及关联后端重构生成本地 Markdown 需求、契约、方案和验收用例 |
 
 每个技能的详细用法见其目录下的 `SKILL.md`。
 
-## 安装方式
+## 插件
+
+[ai-development-workflow](plugins/ai-development-workflow/) 提供跨会话开发协作、压缩续接与独立验收。通过 Luminae Helper 安装：
+
+```sh
+luminae-helper plugin install ai-development-workflow --tool codex
+luminae-helper plugin install ai-development-workflow --tool claude-code
+```
+
+开发时可在本仓库根目录注册本地 marketplace，并安装 `ai-development-workflow@ai-skills`：
+
+```sh
+codex plugin marketplace add .
+codex plugin add ai-development-workflow@ai-skills
+
+claude plugin marketplace add .
+claude plugin install ai-development-workflow@ai-skills
+```
+
+Codex 安装后可在 Hooks 设置中审阅并信任插件 Hook。Cursor、Pi 和 Hermes Agent 的安装、续接和适用条件见[宿主安装与续接](plugins/ai-development-workflow/skills/ai-development-workflow/references/host-adapters.md)。原来安装的独立 Skill 可通过各宿主或 Helper 的卸载入口移除。
+
+## 普通技能安装
 
 ### 1. Helper 工具安装（推荐）
 
@@ -73,11 +93,12 @@ cp -R ai-skills/skills/git-flow ~/.codex/skills/
 ```text
 commands/<id>/SKILL.md  # command 模式条目
 skills/<id>/SKILL.md    # skill 模式条目（可含 references/ scripts/ 等附属文件）
+plugins/<id>/           # 插件清单、Hook 和插件内使用的技能
 ```
 
 ## 下游消费者
 
-本仓库在构建时被以下工具打包（npm 包内含快照，最终用户运行时无需访问本仓库）：
+下游工具从本仓库获取对应内容：
 
-- [luminae-helper](https://github.com/evenweiss/luminae-helper) — 公共技能安装 CLI
+- [luminae-helper](https://github.com/evenweiss/luminae-helper) — 按正式 Tag 获取公共技能，打包时从本仓库读取插件
 - 内部包装器（私有仓库，可内联附加技能后打包分发）
