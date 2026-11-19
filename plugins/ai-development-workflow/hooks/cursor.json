@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "preCompact": [
+      {
+        "command": "python3 -B \"${CURSOR_PLUGIN_ROOT}/skills/ai-development-workflow/scripts/codex_compact.py\" --host cursor",
+        "timeout": 5
+      }
+    ]
+  }
+}

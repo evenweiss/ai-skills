@@ -1,0 +1,13 @@
+{
+  "name": "ai-skills",
+  "owner": {
+    "name": "AI Skills"
+  },
+  "plugins": [
+    {
+      "name": "ai-development-workflow",
+      "source": "./plugins/ai-development-workflow"
+    }
+  ],
+  "description": "AI Skills 仓库提供的插件"
+}
