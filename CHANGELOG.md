@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.0] - 2026-11-19
+
+### Added
+
+- AI 开发协作插件新增 Cursor、Pi 和 Hermes Agent 的安装及上下文续接入口，与 Codex 和 Claude Code 共用一份技能和引用。
+
+### Changed
+
+- 将插件源码和宿主验收用例集中到 ai-skills。保留通过 Luminae Helper 安装 Codex 和 Claude Code 插件的入口。
+- 明确统筹交接、已授权操作次数、阶段放行和独立验收。只暂缓依赖缺失证据或授权的动作。
+
+### Breaking Changes
+
+- `ai-development-workflow` 从公共独立 Skill 迁移为插件，公共 Skill 安装目录不再提供该条目。已安装独立 Skill 的用户可通过宿主或 Helper 卸载旧副本，再按 README 的宿主说明安装插件。
+
 ## [0.8.0] - 2026-11-10
 
 ### Added
