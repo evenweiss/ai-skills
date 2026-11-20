@@ -37,6 +37,7 @@ class MockDesktop(socketserver.ThreadingUnixStreamServer):
     def __init__(self, path):
         self.calls = []
         self.reports = {}
+        self.handoff_candidate = None
         super().__init__(str(path), self.Handler)
 
     class Handler(socketserver.BaseRequestHandler):
@@ -58,12 +59,19 @@ class MockDesktop(socketserver.ThreadingUnixStreamServer):
                 elif method == 'tools/call':
                     args = request['params']['arguments']
                     tool = request['params']['tool']
+                    candidate = self.server.handoff_candidate
                     if tool != CREATE:
-                        assert args['threadId'] in {MOCK_TARGET, MOCK_COORDINATOR}, args
+                        target = args['threadId']
+                        assert target in {MOCK_TARGET, MOCK_COORDINATOR} or candidate == target, args
                     self.server.calls.append((tool, args))
                     if tool in {TOOL, CREATE, FORK, HANDOFF}:
-                        assert args.get('threadId') == MOCK_TARGET or args.get('target') == {'type': 'projectless'}, args
+                        if tool == CREATE:
+                            assert args['target'] == {'type': 'projectless'}, args
+                        else:
+                            assert args['threadId'] == MOCK_TARGET or candidate == args['threadId'], args
                         payload = {'mockReceipt': 'NO_REAL_DISPATCH'}
+                        if tool == CREATE and candidate:
+                            payload.update(threadId=candidate, hostId='local')
                     else:
                         assert tool == 'read_thread', tool
                         payload = self.server.reports[args['threadId']]
