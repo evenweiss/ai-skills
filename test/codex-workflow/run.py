@@ -33,6 +33,93 @@ def install(marketplace, root, env):
     return Path(json.loads(result.stdout)['installedPath'])
 
 
+def check_protected_handoff(rpc, model, desktop, old_registration, policy, sample, coordination, source):
+    old = policy['coordinator']
+    candidate_state = new_thread(rpc, coordination.parent, ':read-only')
+    assert candidate_state['activePermissionProfile']['id'] == ':read-only', candidate_state
+    candidate = candidate_state['thread']['id']
+    desktop.handoff_candidate = candidate
+    target = {'target': {'type': 'projectless'}}
+    candidate_address = {'threadId': candidate, 'hostId': 'local'}
+    executor_address = {'threadId': MOCK_TARGET}
+    candidate_registration = old_registration.with_name(candidate + '.json')
+    task = {key: sample[key] for key in ('task', 'version')}
+    candidate_reporting = {**sample['reporting'], 'recipient': old,
+                           'deliverable': 'first-turn read evidence and findings'}
+    verify_route = {'role': '候选统筹', 'reporting': candidate_reporting,
+                    'checkpoint': sample['checkpoint']}
+    followup = packet({**task, **verify_route})
+    create_prompt = f"只读读取任务 {task['task']} 的权威记录 {coordination}。\n\n" + followup
+    ordinary = packet(sample)
+
+    def dispatch(sender, tool, address, prompt, allowed):
+        count = len(desktop.calls)
+        response = turn(rpc, model, sender, 'protected handoff fixture',
+                        (tool, {**address, 'prompt': prompt}))
+        assert len(desktop.calls) == count + int(allowed), desktop.calls[count:]
+        if not allowed:
+            assert '派单校验未通过' in json.dumps(response, ensure_ascii=False), response
+        return response
+
+    try:
+        # The isolated desktop uses this already provisioned thread as the create receipt.
+        candidate_registration.write_text(json.dumps({**task, 'coordinator': candidate, 'routes': []}))
+        scoped = {**policy, 'routes': [{**verify_route, **target}]}
+        old_registration.write_text(json.dumps(scoped))
+        created = dispatch(old, CREATE, target, create_prompt, True)
+        assert candidate in json.dumps(created), created
+        assert desktop.calls[-1] == (CREATE, {**target, 'prompt': create_prompt})
+        dispatch(old, TOOL, candidate_address, followup, False)
+        scoped['routes'].append({**verify_route, **candidate_address})
+        old_registration.write_text(json.dumps(scoped))
+        dispatch(old, TOOL, candidate_address, followup, True)
+        dispatch(old, TOOL, {'threadId': candidate}, followup, False)
+        dispatch(old, TOOL, candidate_address, ordinary, False)
+        active = {**candidate_reporting, 'mode': 'active', 'authorization': 'approved',
+                  'source': 'fixture approval'}
+        scoped['routes'][-1]['reporting'] = active
+        old_registration.write_text(json.dumps(scoped))
+        dispatch(old, TOOL, candidate_address, packet({**task, **verify_route, 'reporting': active}), False)
+
+        before = coordination.read_bytes()
+        read = turn(rpc, model, candidate, 'first-turn record verification',
+                    command('/bin/cat ' + shlex.quote(str(coordination)), coordination.parent))
+        assert before.decode().strip() in json.dumps(read, ensure_ascii=False), read
+        write = turn(rpc, model, candidate, 'candidate must stay read-only',
+                     command('printf forbidden > ' + shlex.quote(str(coordination)), coordination.parent))
+        assert coordination.read_bytes() == before, write
+        dispatch(candidate, TOOL, executor_address, ordinary, False)
+        dispatch(candidate, CREATE, target, ordinary, False)
+        dispatch(candidate, FORK, executor_address, '', False)
+        dispatch(candidate, HANDOFF, executor_address, '', False)
+
+        # The fixture operator serializes the handoff and grants dispatch only after cutover.
+        old_registration.write_text(json.dumps({**policy, 'routes': []}))
+        dispatch(old, TOOL, executor_address, ordinary, False)
+        dispatch(candidate, TOOL, executor_address, ordinary, False)
+        cutover = coordination.parent / 'cutover.json'
+        committed = {'task': task['task'], 'from': old, 'coordinator': candidate, 'effective': 'fixture-cutover'}
+        cutover.write_text(json.dumps(committed))
+        received = turn(rpc, model, candidate, 'confirm cutover from recorded evidence',
+                        command('/bin/cat ' + shlex.quote(str(cutover)), coordination.parent))
+        assert json.dumps(committed) in str(received), received
+        dispatch(candidate, TOOL, executor_address, ordinary, False)
+        executor_route = {key: sample[key] for key in ('role', 'reporting', 'checkpoint')}
+        candidate_registration.write_text(json.dumps({**task, 'coordinator': candidate,
+                                                     'routes': [{**executor_route, **executor_address}]}))
+        dispatch(old, TOOL, executor_address, ordinary, False)
+        dispatch(candidate, TOOL, executor_address, 'missing packet after cutover', False)
+        dispatch(candidate, TOOL, executor_address, ordinary, True)
+        after = turn(rpc, model, candidate, 'successor keeps business read-only',
+                     command('printf forbidden > ' + shlex.quote(str(source)), source.parent))
+        assert source.read_text() == 'fixture baseline\n', after
+        print('PASS protected handoff: candidate creation and recheck, read-only first turn, guarded cutover', flush=True)
+    finally:
+        desktop.handoff_candidate = None
+        old_registration.write_text(json.dumps(policy))
+        candidate_registration.unlink(missing_ok=True)
+
+
 def run(root, marketplace, model, desktop, socket_path):
     business, records = root/'business', root/'records'
     business.mkdir()
@@ -129,6 +216,8 @@ def run(root, marketplace, model, desktop, socket_path):
         send(TOOL, {'threadId': MOCK_TARGET}, packet(sample), False)
         path.write_text(json.dumps(policy))
         print('PASS dispatch: installed Hook blocks incomplete packets and unregistered routes before delivery', flush=True)
+
+        check_protected_handoff(rpc, model, desktop, path, policy, sample, coordination, source)
 
         desktop.reports = {
             MOCK_TARGET: {**task, 'status': 'completed', 'outboundReceipt': 'not_sent', 'artifact': 'candidate.json'},

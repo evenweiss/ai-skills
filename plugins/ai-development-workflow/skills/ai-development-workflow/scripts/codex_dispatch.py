@@ -12,7 +12,8 @@ DESTINATIONS = {PREFIX + 'send_message_to_thread': 'threadId', PREFIX + 'create_
 OTHER_DISPATCH = {PREFIX + 'fork_thread', PREFIX + 'handoff_thread'}
 PACKET = re.compile(r'^```workflow-dispatch[ \t]*\n(.*?)\n^```[ \t]*$', re.M | re.S)
 EVENTS = {'completed', 'stopped', 'blocked'}
-ROLES = {'开发执行者', '独立验证者', '独立监督者', '产品执行者', '设计执行者', '文档执行者'}
+HANDOFF_ROLE = '候选统筹'
+ROLES = {'开发执行者', '独立验证者', '独立监督者', '产品执行者', '设计执行者', '文档执行者', HANDOFF_ROLE}
 
 
 def require(condition, message):
@@ -58,6 +59,8 @@ def validate(args, policy, destination):
     require(isinstance(events, list) and all(isinstance(event, str) for event in events)
             and EVENTS.issubset(events) and events == expected.get('events'),
             '回传事件须匹配登记，并含完成、中止及新实质阻塞')
+    if role == HANDOFF_ROLE:
+        require(reporting['mode'] == 'read-only', '候选统筹核验只允许只读查收')
     if reporting['mode'] == 'active':
         require(reporting['authorization'] == 'approved'
                 and field(reporting, 'source') == field(expected, 'source'), '主动回传须匹配已登记授权出处')
