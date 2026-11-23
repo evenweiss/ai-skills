@@ -39,7 +39,7 @@ claude plugin marketplace add .
 claude plugin install ai-development-workflow@ai-skills
 ```
 
-Codex 安装后可在 Hooks 设置中审阅并信任插件 Hook。Cursor、Pi 和 Hermes Agent 的安装、续接和适用条件见[宿主安装与续接](plugins/ai-development-workflow/skills/ai-development-workflow/references/host-adapters.md)。原来安装的独立 Skill 可通过各宿主或 Helper 的卸载入口移除。
+发布后验收本机 Codex 的安装或升级结果时，按[Hook 核验说明](plugins/ai-development-workflow/skills/ai-development-workflow/references/codex-coordinator.md#启用)检查所用 Hook 的来源、启用和信任状态。Cursor、Pi 和 Hermes Agent 的安装、续接和适用条件见[宿主安装与续接](plugins/ai-development-workflow/skills/ai-development-workflow/references/host-adapters.md)。原来安装的独立 Skill 可通过各宿主或 Helper 的卸载入口移除。
 
 ## 普通技能安装
 
