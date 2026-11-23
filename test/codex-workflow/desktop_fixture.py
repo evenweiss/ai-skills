@@ -124,9 +124,12 @@ class ModelFixture(ThreadingHTTPServer):
                             namespace, name = match[1], tool
                         else:
                             namespace, name = match[:2]
-                        output = {'type': 'function_call', 'id': f'fc{model.index}',
-                                  'call_id': f'call{model.index}', 'name': name, 'arguments': json.dumps(arguments),
-                                  'status': 'completed'}
+                        output = {'id': f'fc{model.index}', 'call_id': f'call{model.index}',
+                                  'name': name, 'status': 'completed'}
+                        if match[2] == 'custom':
+                            output.update(type='custom_tool_call', input=arguments)
+                        else:
+                            output.update(type='function_call', arguments=json.dumps(arguments))
                         if namespace:
                             output['namespace'] = namespace
                 response = {'id': f'resp_{len(model.requests)}', 'object': 'response', 'created_at': 1,
@@ -151,9 +154,13 @@ class ModelFixture(ThreadingHTTPServer):
 
 
 @contextmanager
-def process_app(root, env):
+def process_app(root, env, *, code_mode=False):
     with (root / 'runtime.log').open('a') as log:
-        p = subprocess.Popen([str(BINARY), 'app-server', '--listen', 'stdio://'], cwd=root,
+        args = [str(BINARY), 'app-server', '--listen', 'stdio://']
+        if code_mode:
+            args.extend(['--enable', 'code_mode'])
+            env = {**env, 'PATH': str(RES/'codex-cli/bin') + ':' + env['PATH']}
+        p = subprocess.Popen(args, cwd=root,
                              env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True)
         try:
             rpc = Rpc(p)

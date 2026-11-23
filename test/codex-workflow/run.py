@@ -261,7 +261,33 @@ def run(root, marketplace, model, desktop, socket_path):
                        for body in turn(rpc, model, ordinary, 'ordinary after compaction'))
         path.unlink()
         send(TOOL, {'threadId': MOCK_TARGET}, 'registration removed', True)
-        print('PASS scope: ordinary chat writes and messages as before; removing registration ends validation', flush=True)
+        subprocess.run(['/usr/bin/python3', '-B', str(script), 'unregister', coordinator, task['task']],
+                       env=env, check=True, timeout=5)
+        model.use()
+        rpc.call('thread/compact/start', {'threadId': coordinator})
+        rpc.finish_turn(coordinator)
+        assert not any(MARKER in developer_context(body)
+                       for body in turn(rpc, model, coordinator, 'coordinator after unregister'))
+        print('PASS scope: ordinary chat unaffected; unregister ends dispatch checks and compaction reminders', flush=True)
+
+    with process_app(root, env, code_mode=True) as rpc:
+        state = new_thread(rpc, business, 'workflow-coordinator')
+        assert state['activePermissionProfile']['id'] == 'workflow-coordinator', state
+        coordinator = state['thread']['id']
+        registration = path.with_name(coordinator + '.json')
+        registration.write_text(json.dumps({**task, 'coordinator': coordinator,
+                                            'routes': [{**route, 'threadId': MOCK_TARGET}]}))
+        incomplete = {key: value for key, value in sample.items() if key != 'reporting'}
+        for data, allowed in ((sample, True), (incomplete, False)):
+            arguments = {'threadId': MOCK_TARGET, 'prompt': packet(data)}
+            script_input = f'text(await tools.mcp__codex_app__send_message_to_thread({json.dumps(arguments)}))'
+            before = len(desktop.calls)
+            replies = turn(rpc, model, coordinator, 'nested code-mode dispatch', ('exec', script_input))
+            assert desktop.calls[before:] == ([(TOOL, arguments)] if allowed else []), desktop.calls[before:]
+            outputs = [item for item in replies[-1]['input'] if item['type'] == 'custom_tool_call_output']
+            expected = 'NO_REAL_DISPATCH' if allowed else '派单校验未通过'
+            assert outputs and expected in json.dumps(outputs[-1], ensure_ascii=False), outputs
+        print('PASS code mode: one valid nested dispatch delivered, incomplete dispatch denied before delivery', flush=True)
 
 
 def main():

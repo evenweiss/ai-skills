@@ -76,20 +76,30 @@ def registration_context(host, session, config_dir=None, *, before_compaction=Fa
         return json.dumps(str(value), ensure_ascii=False)
 
     tasks = []
+    invalid_entries = 0
     for entry in sorted(session_dir(host, session, config_dir).glob('*.json')):
         try:
             info = json.loads(entry.read_text(encoding='utf-8'))
             task = identifier(info['task'])
             record = Path(info['record'])
+            if host == 'codex' and not record.is_absolute():
+                raise ValueError('Expected an absolute record path.')
             readable = readable_record(record)
+        except FileNotFoundError:
+            # An entry can be unregistered after the directory listing.
+            continue
         except (ValueError, OSError, TypeError, KeyError, argparse.ArgumentTypeError):
+            invalid_entries += 1
             continue
         locator = f'- 任务 {quote(task)}，协调记录 {quote(record)}'
         if not readable:
             locator += '（不可读取。先做只读核查，暂缓受影响的写入或实质验证。）'
         tasks.append(locator)
+    diagnostics = []
+    if host == 'codex' and invalid_entries:
+        diagnostics.append(f'本会话有 {invalid_entries} 份续接登记无法读取或格式无效。请由获授权的配置者核对登记。')
     if not tasks:
-        return ''
+        return '\n'.join(diagnostics)
     notice = (
         '即将压缩。压缩后请手动按以下入口恢复已登记的统筹任务。'
         if before_compaction else
@@ -102,6 +112,7 @@ def registration_context(host, session, config_dir=None, *, before_compaction=Fa
         '若角色或写入归属未核实，先做只读核查，暂缓该任务受影响的写入或实质验证。',
         '其他任务仍按各自的分工处理。',
         *tasks,
+        *diagnostics,
     ])
 
 

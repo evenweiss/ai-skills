@@ -39,6 +39,37 @@ class HostCompactionTests(unittest.TestCase):
                 self.call(host, ('unregister', 'S1', 'T1'))
                 self.assertEqual(self.call(host, event=hook), '')
 
+    def test_codex_reports_invalid_registrations_and_recovers_valid_tasks(self):
+        event = {'hook_event_name': 'SessionStart', 'session_id': 'S1', 'source': 'compact'}
+        profile = self.root / 'codex'
+        self.assertEqual(self.call('codex', event=event), '')
+        self.call('codex', ('register', 'S1', 'BAD', str(self.record)))
+        entry, = profile.rglob('*.json')
+        for invalid in ('private malformed entry', '{"task":"BAD","record":"private-relative-path"}'):
+            with self.subTest(invalid=invalid):
+                entry.write_text(invalid, encoding='utf-8')
+                output = json.loads(self.call('codex', event=event))['hookSpecificOutput']
+                self.assertEqual(output['hookEventName'], 'SessionStart')
+                warning = output['additionalContext']
+                self.assertIn('续接登记', warning)
+                self.assertIn('配置者', warning)
+                self.assertNotIn('private', warning)
+                self.assertNotIn(str(self.record), warning)
+                self.assertNotIn('BAD', warning)
+
+        self.assertEqual(self.call('codex', event={**event, 'session_id': 'S2'}), '')
+        entry.unlink()
+        entry.mkdir()
+        for host in ('pi', 'hermes'):
+            self.assertEqual(self.call(host, ('context', 'S1'), config=profile), '')
+
+        self.call('codex', ('register', 'S1', 'GOOD', str(self.record)))
+        context = json.loads(self.call('codex', event=event))['hookSpecificOutput']['additionalContext']
+        self.assertIn('续接登记', context)
+        self.assertIn('GOOD', context)
+        self.assertIn(str(self.record), context)
+        self.assertNotIn('protected coordination notes', context)
+
     def test_cursor_sends_only_pre_compaction_user_notice(self):
         hook = {'hook_event_name': 'preCompact', 'conversation_id': 'current-session'}
         self.call('cursor', ('register', 'current-session', 'CURSOR-TASK', str(self.record)))
