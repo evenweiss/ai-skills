@@ -1,5 +1,5 @@
 name: ai-development-workflow
-version: "0.10.2"
+version: "0.10.3"
 description: AI 协作开发流程与上下文压缩后的统筹续接提醒。
 author: evenweiss
 provides_hooks:
