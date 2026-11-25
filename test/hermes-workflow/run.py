@@ -8,8 +8,8 @@ import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
-from types import SimpleNamespace
-from unittest.mock import patch
+from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock, patch
 
 
 PLUGIN = "ai-development-workflow"
@@ -33,6 +33,18 @@ def run_phase(phase, profile, root):
     env = os.environ.copy()
     env.update(HERMES_HOME=str(profile), PYTHONDONTWRITEBYTECODE="1")
     subprocess.run([sys.executable, "-B", __file__, phase, str(root)], cwd=root, env=env, check=True)
+
+
+def verify_manual_command(module, *diagnostics):
+    context = Mock()
+    module.register(context)
+    context.register_skill.assert_called_once()
+    context.register_hook.assert_not_called()
+    context.register_command.assert_called_once()
+    name, handler, _description = context.register_command.call_args.args
+    assert name == COMMAND
+    notice = handler("register task-a /tmp/record.md")
+    assert "手动续接" in notice and all(term in notice for term in diagnostics), notice
 
 
 def verify(phase, root):
@@ -85,6 +97,25 @@ def verify(phase, root):
     record = root / "coordination record.md"
     second_record = root / "second record.md"
     if phase == "seed":
+        # Normal Gateway CLI commands and hooks use physical IDs. The logical route stays
+        # on the first ID even after compression rotates the physical transcript.
+        local = "local-" + "0123456789abcdef" * 4
+        rotated = "8da3f1929a084a3fb434355ec9e290bc"
+        other = "8da3f1929a084a3fb434355ec9e290bd"
+        register_local = f"register gateway-task {shlex.quote(str(record))}"
+        for invalid in (f"agent:main:local:dm:{local}", local[:-1], local + "f", local.upper(),
+                        rotated[:12] + "5" + rotated[13:], rotated[:16] + "7" + rotated[17:],
+                        rotated.upper(), rotated + "f"):
+            assert "手动续接" in command(invalid, register_local)
+        assert "已登记" in command(local, register_local)
+        compact(rotated, local)
+        assert not turn(local) and not turn(other, parent=local)
+        assert not turn(rotated, platform="subagent")
+        assert "gateway-task" in turn(rotated)
+        assert not turn(rotated)
+        assert "已因压缩迁移" in command(local, "unregister gateway-task")
+        assert "已撤销" in command(rotated, "unregister gateway-task")
+
         assert "手动续接" in command("agent:main:cli", f"register task-a {shlex.quote(str(record))}")
         assert "手动续接" in command("", f"register task-a {shlex.quote(str(record))}")
         assert "手动续接" in command(OLD, "register task-a relative.md")
@@ -129,20 +160,22 @@ def verify(phase, root):
         assert "已撤销" in command(NEXT, "unregister task-b")
         assert not turn(NEXT)
 
-        # Loading on a host missing the compaction hook keeps the bundled skill available.
         module = manager._plugins[PLUGIN].module
-        fallback_hooks = []
-        fallback_skills = []
-        fallback_commands = []
-        context = SimpleNamespace(
-            register_skill=lambda *args, **kwargs: fallback_skills.append((args, kwargs)),
-            register_command=lambda _name, fn, *_args, **_kwargs: fallback_commands.append(fn),
-            register_hook=lambda *args: fallback_hooks.append(args),
-        )
         with patch.object(plugins, "VALID_HOOKS", {"pre_llm_call"}):
-            module.register(context)
-        assert len(fallback_skills) == 1 and not fallback_hooks and len(fallback_commands) == 1
-        assert "手动续接" in fallback_commands[0]("register task-a /tmp/record.md")
+            verify_manual_command(module, "post_compaction")
+        with patch.dict(sys.modules, {"session_rules.session_ids": None, "hermes_state_ids": None}):
+            verify_manual_command(module, "session_rules.session_ids", "hermes_state_ids")
+
+        # A usable legacy module must not mask a failure inside the newer module.
+        session_rules = ModuleType("session_rules")
+        session_rules.__path__ = [str(root)]
+        legacy = SimpleNamespace(is_known_session_id=lambda value: True)
+        with patch.dict(sys.modules, {"session_rules": session_rules, "hermes_state_ids": legacy}):
+            sys.modules.pop("session_rules.session_ids", None)
+            (root / "session_ids.py").write_text("import missing_hermes_test_dependency\n", encoding="utf-8")
+            verify_manual_command(module, "missing_hermes_test_dependency")
+            (root / "session_ids.py").write_text("is_known_session_id = None\n", encoding="utf-8")
+            verify_manual_command(module, "is_known_session_id")
     print(f"Hermes {hermes_cli.__version__} {phase} passed")
 
 

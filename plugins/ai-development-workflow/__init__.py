@@ -7,6 +7,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import shlex
 
 
@@ -14,6 +15,9 @@ HOST = "hermes"
 PLUGIN = "ai-development-workflow"
 SKILL = Path(__file__).resolve().parent / "skills" / PLUGIN / "SKILL.md"
 HOOKS = {"post_compaction", "pre_llm_call"}
+# Gateway supplies local_session_id() at creation and uuid4().hex after a rotating /compress.
+# Hermes' transcript salvage recognizer does not include these two physical session ID formats.
+GATEWAY_SESSION_ID = re.compile(r"local-[0-9a-f]{64}|[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}")
 COMMAND = "workflow-coordinator"
 USAGE = f"用法 /{COMMAND} register <任务ID> <协调记录绝对路径> 或 /{COMMAND} unregister <任务ID>"
 MANUAL = "请从协调记录手动续接，核对最新分工、执行者和授权。"
@@ -47,7 +51,20 @@ def _exclusive_lock(path):
 
 class _Recovery:
     def __init__(self, home):
-        from hermes_state_ids import is_known_session_id
+        try:
+            from session_rules.session_ids import is_known_session_id
+        except ModuleNotFoundError as error:
+            if error.name not in {"session_rules", "session_rules.session_ids"}:
+                raise
+            try:
+                from hermes_state_ids import is_known_session_id
+            except ModuleNotFoundError as legacy_error:
+                if legacy_error.name != "hermes_state_ids":
+                    raise
+                raise ImportError("找不到 session_rules.session_ids 或 hermes_state_ids") from legacy_error
+
+        if not callable(is_known_session_id):
+            raise ImportError("Hermes 的 is_known_session_id 不可调用")
         from utils import atomic_json_write
 
         self.home = home
@@ -57,7 +74,9 @@ class _Recovery:
         self.is_known_session_id = is_known_session_id
 
     def _native_id(self, value):
-        if not isinstance(value, str) or not self.is_known_session_id(value):
+        if not isinstance(value, str):
+            return False
+        if not self.is_known_session_id(value) and not GATEWAY_SESSION_ID.fullmatch(value):
             return False
         try:
             self.registrations.identifier(value)
@@ -170,20 +189,27 @@ def register(ctx):
         LOGGER.warning("当前 Hermes 插件 API 缺少会话命令。%s", MANUAL)
         return
 
-    def unavailable(_args):
-        return "当前 Hermes 运行时无法自动续接。" + MANUAL
-
-    command = unavailable
-    if callable(getattr(ctx, "register_hook", None)) and HOOKS <= getattr(plugins, "VALID_HOOKS", set()):
+    reason = ""
+    missing_hooks = HOOKS.difference(getattr(plugins, "VALID_HOOKS", set()))
+    if not callable(getattr(ctx, "register_hook", None)):
+        reason = "缺少 register_hook 接口"
+    elif missing_hooks:
+        reason = "缺少续接事件 " + ", ".join(sorted(missing_hooks))
+    else:
         try:
             recovery = _Recovery(get_hermes_home())
-        except ImportError:
-            LOGGER.warning("当前 Hermes 运行时缺少压缩续接依赖。%s", MANUAL)
+        except ImportError as error:
+            reason = f"续接依赖加载失败（{error}）"
         else:
             ctx.register_hook("post_compaction", recovery.post_compaction)
             ctx.register_hook("pre_llm_call", recovery.pre_llm_call)
             command = recovery.command
-    else:
-        LOGGER.warning("当前 Hermes 运行时缺少压缩续接事件。%s", MANUAL)
+
+    if reason:
+        notice = f"当前 Hermes 运行时无法自动续接，{reason}。{MANUAL}"
+        LOGGER.warning("%s", notice)
+
+        def command(_args):
+            return notice
 
     ctx.register_command(COMMAND, command, "登记或撤销当前会话的统筹续接任务", args_hint="<动作> <任务ID> [记录路径]")

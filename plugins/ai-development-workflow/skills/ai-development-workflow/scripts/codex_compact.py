@@ -16,6 +16,10 @@ HOST_CONFIG = {
     'pi': ('PI_CODING_AGENT_DIR', '.pi/agent'),
     'hermes': ('HERMES_HOME', '.hermes'),
 }
+CURSOR_COMPACTION_FIELDS = (
+    'generation_id', 'trigger', 'context_usage_percent', 'context_tokens',
+    'context_window_size', 'message_count', 'messages_to_compact', 'is_first_compaction',
+)
 
 
 def identifier(value):
@@ -116,6 +120,39 @@ def registration_context(host, session, config_dir=None, *, before_compaction=Fa
     ])
 
 
+def claim_cursor_notice(event, session, config_dir):
+    generation = event.get('generation_id')
+    if not isinstance(generation, str) or not generation.strip():
+        return True
+
+    # Cursor fans out the same payload to both installations and awaits both
+    # hooks. Different compactions within one generation can have different
+    # stats, and the same installation can run again with identical stats.
+    fields = [event.get(field) for field in CURSOR_COMPACTION_FIELDS]
+    compaction = sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
+    source = sha256(os.fsencode(SKILL)).hexdigest()
+    state_path = session_dir('cursor', session, config_dir) / '.pre-compact-notice'
+    try:
+        fd = os.open(state_path, os.O_RDWR | os.O_CREAT, 0o600)
+        with os.fdopen(fd, 'r+', encoding='ascii') as state:
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(state.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(state.fileno(), fcntl.LOCK_EX)
+
+            previous, *sources = state.read().split() or ['']
+            duplicate = previous == compaction and bool(sources) and source not in sources
+            state.seek(0)
+            state.write(' '.join([compaction, *(sources if duplicate else []), source]))
+            state.truncate()
+            return not duplicate
+    except (OSError, UnicodeError):
+        # Keep the reminder available if the shared state is inaccessible.
+        return True
+
+
 def run_hook(host, config_dir=None):
     event = json.load(sys.stdin)
     if host == 'cursor':
@@ -125,7 +162,7 @@ def run_hook(host, config_dir=None):
         if not session:
             return
         context = registration_context(host, session, config_dir, before_compaction=True)
-        if context:
+        if context and claim_cursor_notice(event, session, config_dir):
             print(json.dumps({'user_message': context}, ensure_ascii=False))
         return
     if host not in ('codex', 'claude-code'):

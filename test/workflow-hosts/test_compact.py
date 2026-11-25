@@ -1,5 +1,7 @@
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,13 +19,18 @@ class HostCompactionTests(unittest.TestCase):
         self.record = self.root / 'coordination record.md'
         self.record.write_text('protected coordination notes', encoding='utf-8')
 
-    def call(self, host, args=(), event=None, config=None):
+    def call(self, host, args=(), event=None, config=None, script=SCRIPT):
         return subprocess.run(
-            [sys.executable, '-B', str(SCRIPT), '--host', host, '--config-dir',
+            [sys.executable, '-B', str(script), '--host', host, '--config-dir',
              str(config or self.root / host), *args],
             input=json.dumps(event) if event else '',
             encoding='utf-8', capture_output=True, check=True, timeout=5,
         ).stdout
+
+    def cursor_hook_copy(self, name):
+        script = self.root / name / SCRIPT.relative_to(PLUGIN)
+        script.parent.mkdir(parents=True)
+        return shutil.copyfile(SCRIPT, script)
 
     def test_existing_session_start_contract(self):
         for host in ('codex', 'claude-code'):
@@ -82,6 +89,55 @@ class HostCompactionTests(unittest.TestCase):
         self.assertEqual(self.call('cursor', event={**hook, 'hook_event_name': 'sessionStart'}), '')
         self.call('cursor', ('unregister', 'current-session', 'CURSOR-TASK'))
         self.assertEqual(self.call('cursor', event=hook), '')
+
+    def test_cursor_deduplicates_concurrent_installations_per_compaction(self):
+        hook = {'hook_event_name': 'preCompact', 'conversation_id': 'current-session',
+                'generation_id': 'generation-1', 'trigger': 'manual', 'message_count': 12}
+        self.call('cursor', ('register', hook['conversation_id'], 'CURSOR-TASK', str(self.record)))
+        scripts = [self.cursor_hook_copy(name) for name in ('cursor-native', 'claude-imported')]
+        next_compaction = {**hook, 'message_count': 8}
+        next_generation = {**hook, 'generation_id': 'generation-2'}
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            for event in (hook, next_compaction, next_compaction, next_generation):
+                outputs = list(pool.map(lambda script: self.call('cursor', event=event, script=script), scripts))
+                notices = [json.loads(output)['user_message'] for output in outputs if output]
+                self.assertEqual(len(notices), 1, outputs)
+                self.assertIn(str(self.record), notices[0])
+
+        # Both the imported and native installation can be the first to run.
+        for first, second in (scripts, scripts[::-1]):
+            self.assertTrue(self.call('cursor', event=next_generation, script=first))
+            self.assertEqual(self.call('cursor', event=next_generation, script=second), '')
+
+    def test_cursor_single_installation_and_profile_isolation(self):
+        event = {'hook_event_name': 'preCompact', 'conversation_id': 'current-session',
+                 'generation_id': 'generation-1'}
+        args = ('register', event['conversation_id'], 'CURSOR-TASK', str(self.record))
+        self.call('cursor', args)
+        self.assertTrue(self.call('cursor', event=event))
+        self.assertTrue(self.call('cursor', event=event))
+
+        imported = self.cursor_hook_copy('claude-imported')
+        self.assertEqual(self.call('cursor', event=event, script=imported), '')
+        profile = self.root / 'other-profile'
+        self.call('cursor', args, config=profile)
+        for _ in range(2):
+            self.assertTrue(self.call('cursor', event=event, config=profile, script=imported))
+
+        sibling = {**event, 'conversation_id': 'different-session'}
+        self.call('cursor', ('register', sibling['conversation_id'], 'OTHER-TASK', str(self.record)))
+        self.assertTrue(self.call('cursor', event=sibling, script=imported))
+        self.assertEqual(self.call('cursor', event=sibling), '')
+
+    def test_cursor_reminder_survives_missing_generation_and_unusable_state(self):
+        event = {'hook_event_name': 'preCompact', 'conversation_id': 'current-session'}
+        self.call('cursor', ('register', event['conversation_id'], 'CURSOR-TASK', str(self.record)))
+        self.assertTrue(self.call('cursor', event=event))
+        entry, = (self.root / 'cursor').rglob('*.json')
+        (entry.parent / '.pre-compact-notice').mkdir()
+        output = self.call('cursor', event={**event, 'generation_id': 'generation-1'})
+        self.assertIn(str(self.record), json.loads(output)['user_message'])
 
     def test_context_uses_explicit_host_profile_and_opaque_id(self):
         session = 'Opaque id: here/only'
